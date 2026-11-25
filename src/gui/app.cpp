@@ -59,19 +59,37 @@ void local_hms(double t_unix, char* out, size_t n) {
     std::strftime(out, n, "%H:%M:%S", std::localtime(&t));
 }
 
+// Per-user data directory: %LOCALAPPDATA%\OpenITC on Windows,
+// ~/Library/Application Support/OpenITC on macOS, and
+// $XDG_DATA_HOME/openitc (default ~/.local/share/openitc) elsewhere.
+// Falls back to the current directory if none of those can be resolved.
+static std::filesystem::path user_data_dir() {
+    namespace fs = std::filesystem;
+    auto env = [](const char* k) -> const char* {
+        const char* v = std::getenv(k);
+        return (v && *v) ? v : nullptr;
+    };
+#if defined(_WIN32)
+    if (const char* la = env("LOCALAPPDATA")) return fs::path(la) / "OpenITC";
+#elif defined(__APPLE__)
+    if (const char* home = env("HOME"))
+        return fs::path(home) / "Library" / "Application Support" / "OpenITC";
+#else
+    if (const char* xdg = env("XDG_DATA_HOME")) return fs::path(xdg) / "openitc";
+    if (const char* home = env("HOME")) return fs::path(home) / ".local" / "share" / "openitc";
+#endif
+    return fs::path(".");
+}
+
 std::string default_db_path() {
-    const char* la = std::getenv("LOCALAPPDATA");
-    std::filesystem::path dir =
-        la ? std::filesystem::path(la) / "OpenITC" : std::filesystem::path(".");
+    const std::filesystem::path dir = user_data_dir();
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     return (dir / "openitc.db").string();
 }
 
 std::string tile_cache_dir() {
-    const char* la = std::getenv("LOCALAPPDATA");
-    std::filesystem::path dir =
-        la ? std::filesystem::path(la) / "OpenITC" : std::filesystem::path(".");
+    const std::filesystem::path dir = user_data_dir();
     std::error_code ec;
     std::filesystem::create_directories(dir / "tiles", ec);
     return (dir / "tiles").string();

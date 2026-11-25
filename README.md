@@ -54,11 +54,16 @@ Full details, including the reverse-engineering notes, are in
 plain-language explanation of the whole ITC system (band, framing, messaging,
 wayside status, and security), see [`docs/how-itc-works.md`](docs/how-itc-works.md).
 
-## Build (MSYS2 MinGW-w64)
+## Build
+
+OpenITC builds with CMake on Windows (MSYS2 MinGW-w64), Linux and macOS.
+
+### Windows (MSYS2 MinGW-w64)
 
 ```sh
 pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake \
-    mingw-w64-x86_64-ninja mingw-w64-x86_64-rtl-sdr mingw-w64-x86_64-zeromq
+    mingw-w64-x86_64-ninja mingw-w64-x86_64-pkgconf mingw-w64-x86_64-rtl-sdr \
+    mingw-w64-x86_64-zeromq mingw-w64-x86_64-glfw mingw-w64-x86_64-sqlite3
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
@@ -66,6 +71,30 @@ cmake --build build
 The runtime DLLs (`librtlsdr`, `libusb-1.0`, `libzmq`, `libsodium`, GNU runtime)
 must sit next to `openitc.exe` or on `PATH`. On Windows the RTL-SDR dongle also
 needs a WinUSB driver (e.g. via Zadig).
+
+### Linux (Debian/Ubuntu)
+
+```sh
+sudo apt install build-essential cmake pkg-config librtlsdr-dev libsqlite3-dev \
+    libglfw3-dev libgl-dev libcurl4-openssl-dev
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+To use the dongle without root, install the udev rules shipped with `rtl-sdr`
+and blacklist the `dvb_usb_rtl28xxu` kernel module.
+
+### macOS (Homebrew)
+
+```sh
+brew install cmake pkgconf librtlsdr sqlite glfw
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+libcurl (used for map tiles) comes with macOS. On Linux and macOS, if libcurl
+is missing the GUI still builds and the map shows cached tiles only. ZeroMQ is
+only needed on Windows, for the legacy `openitc decode` path.
 
 ## Usage
 
@@ -108,7 +137,7 @@ in ITCMon, so the raw indicator bytes are always shown too).
 
 ```sh
 # Launch the desktop dashboard (no console window)
-./build/openitc-gui.exe
+./build/openitc-gui   # openitc-gui.exe on Windows
 ```
 
 The dashboard has a header (SDR status chips and dual **local / ITC (UTC)**
@@ -116,13 +145,16 @@ clocks with drift), a sidebar (session state, active WIUs, latest beacon), a
 live **beacon map** and a colorized **raw frame log** with type/text filters and
 pause/clear/export.
 
-- The map uses **Esri World Imagery** (satellite) tiles, cached under
-  `%LOCALAPPDATA%\OpenITC\tiles`. Override the provider with environment
+- The map uses **Esri World Imagery** (satellite) tiles, cached in a `tiles`
+  folder under the data directory (see below). Override the provider with environment
   variables: `OPENITC_TILE_URL` (supports `{z}/{x}/{y}` or `{z}/{y}/{x}` and
   `{key}`), `OPENITC_TILE_UA` (User-Agent), and `OPENITC_TILE_KEY`.
 - The SDR selector lists detected RTL-SDR devices; **gain**/**AGC**, **ppm**,
   **bias tee** and **chunk** are configurable (restart to apply).
-- Decoded packets are recorded to `%LOCALAPPDATA%\OpenITC\openitc.db` (SQLite).
+- Decoded packets are recorded to `openitc.db` (SQLite) in the data directory:
+  `%LOCALAPPDATA%\OpenITC` on Windows, `~/Library/Application Support/OpenITC`
+  on macOS, and `$XDG_DATA_HOME/openitc` (default `~/.local/share/openitc`) on
+  Linux.
 
 ### Capture / channelize
 
@@ -134,8 +166,8 @@ pause/clear/export.
 ./build/openitc -c 142 -s 960000 -R 192000 -n 19200000 -o ch142.cf32
 ```
 
-> `openitc decode` is a legacy path that shells out to a reference binary; the
-> native `demod`/`monitor` commands above are self-contained.
+> `openitc decode` is a legacy, Windows-only path that shells out to a reference
+> binary; the native `demod`/`monitor` commands above are self-contained.
 
 ## License
 

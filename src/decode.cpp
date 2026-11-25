@@ -9,6 +9,22 @@
 
 #include "decode.h"
 
+#ifndef _WIN32
+// The reference s2p engine is a Windows executable, so this legacy path is
+// Windows-only. Use `openitc demod` / `openitc monitor` (native PHY) instead.
+#include <cstdio>
+
+namespace openitc {
+int run_decode(int, char**) {
+    std::fprintf(stderr,
+                 "openitc decode: the legacy s2p decoder is only available on Windows.\n"
+                 "Use 'openitc demod' or 'openitc monitor' (native PHY) instead.\n");
+    return 1;
+}
+}  // namespace openitc
+
+#else  // _WIN32
+
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -237,3 +253,5 @@ int run_decode(int argc, char** argv) {
 }
 
 }  // namespace openitc
+
+#endif  // _WIN32

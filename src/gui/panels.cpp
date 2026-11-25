@@ -404,7 +404,7 @@ void draw_terminal(AppState& s, const ImVec2& size) {
             ImGui::TextColored(dim, ">");
             ImGui::SameLine(0, 4);
             ImVec4 blk = cyan;
-            blk.w = 0.35f + 0.65f * std::fabs(std::sinf((float)ImGui::GetTime() * 4.0f));
+            blk.w = 0.35f + 0.65f * std::fabs(std::sin((float)ImGui::GetTime() * 4.0f));
             const ImVec2 cp = ImGui::GetCursorScreenPos();
             ImGui::GetWindowDrawList()->AddRectFilled(
                 cp, ImVec2(cp.x + 8, cp.y + ImGui::GetTextLineHeight()), u(blk));

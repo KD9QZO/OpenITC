@@ -22,10 +22,17 @@
 #endif
 #include <windows.h>
 #include <winhttp.h>
+#elif defined(OPENITC_HAVE_CURL)
+#include <curl/curl.h>
+#endif
+
+#if defined(__APPLE__)
+#include <OpenGL/gl.h>
+#else
 #include <GL/gl.h>
+#endif
 #ifndef GL_CLAMP_TO_EDGE
 #define GL_CLAMP_TO_EDGE 0x812F
-#endif
 #endif
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -56,9 +63,9 @@ std::string replace_all(std::string s, const std::string& from, const std::strin
     return s;
 }
 
+#ifdef _WIN32
 std::wstring widen(const std::string& s) { return std::wstring(s.begin(), s.end()); }
 
-#ifdef _WIN32
 // Returns the HTTP status code (e.g. 200/403/429), or 0 on transport failure.
 int http_get(const std::string& url, const std::string& ua, std::vector<uint8_t>& out) {
     const std::wstring wurl = widen(url);
@@ -115,6 +122,49 @@ int http_get(const std::string& url, const std::string& ua, std::vector<uint8_t>
         WinHttpCloseHandle(hc);
     }
     WinHttpCloseHandle(hs);
+    return status_code;
+}
+#elif defined(OPENITC_HAVE_CURL)
+size_t curl_append(char* data, size_t size, size_t n, void* user) {
+    auto* out = static_cast<std::vector<uint8_t>*>(user);
+    out->insert(out->end(), data, data + size * n);
+    return size * n;
+}
+
+// Returns the HTTP status code (e.g. 200/403/429), or 0 on transport failure.
+// Called only from the tile worker thread, which keeps one easy handle alive
+// for connection reuse.
+int http_get(const std::string& url, const std::string& ua, std::vector<uint8_t>& out) {
+    static const bool global_ok = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
+    if (!global_ok) return 0;
+    thread_local struct Easy {
+        CURL* h = curl_easy_init();
+        ~Easy() { if (h) curl_easy_cleanup(h); }
+    } easy;
+    CURL* h = easy.h;
+    if (!h) return 0;
+
+    curl_easy_reset(h);
+    std::vector<uint8_t> body;
+    curl_slist* hdrs = curl_slist_append(nullptr, "Accept: image/png,image/jpeg,*/*");
+    curl_easy_setopt(h, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(h, CURLOPT_USERAGENT, ua.c_str());
+    curl_easy_setopt(h, CURLOPT_HTTPHEADER, hdrs);
+    curl_easy_setopt(h, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(h, CURLOPT_CONNECTTIMEOUT, 8L);
+    curl_easy_setopt(h, CURLOPT_TIMEOUT, 16L);
+    curl_easy_setopt(h, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(h, CURLOPT_WRITEFUNCTION, curl_append);
+    curl_easy_setopt(h, CURLOPT_WRITEDATA, &body);
+
+    int status_code = 0;
+    if (curl_easy_perform(h) == CURLE_OK) {
+        long status = 0;
+        curl_easy_getinfo(h, CURLINFO_RESPONSE_CODE, &status);
+        status_code = (int)status;
+        if (status_code == 200) out.insert(out.end(), body.begin(), body.end());
+    }
+    curl_slist_free_all(hdrs);
     return status_code;
 }
 #else
@@ -335,7 +385,6 @@ void TileCache::pump() {
     for (auto& kv : tiles_) {
         Tile& t = kv.second;
         if (t.gl != 0 || t.rgba.empty()) continue;
-#ifdef _WIN32
         GLuint tex = 0;
         glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
@@ -349,7 +398,6 @@ void TileCache::pump() {
         t.gl = (unsigned)tex;
         pending_count_.fetch_sub(1);
         ready_count_.fetch_add(1);
-#endif
         t.rgba.clear();
         t.rgba.shrink_to_fit();
     }
